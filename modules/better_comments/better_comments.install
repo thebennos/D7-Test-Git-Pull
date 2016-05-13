@@ -1,0 +1,18 @@
+<?php
+/**
+ * @file
+ * Better Comments provides option to configure the comment system.
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function better_comments_uninstall() {
+  variable_del('better_comments_subject');
+  variable_del('better_comments_author');
+  variable_del('better_comments_body_title');
+  variable_del('better_comments_picture');
+  variable_del('better_comments_text_placeholder');
+  variable_del('better_comments_text_filters');
+  variable_del('better_comments_preview');
+}

@@ -1,0 +1,12 @@
+name = Paragraph panes
+description = Allows to add paragraph items in Page Manager
+dependencies[] = paragraphs
+dependencies[] = panels
+core = 7.x
+
+; Information added by Drupal.org packaging script on 2016-05-10
+version = "7.x-1.0-beta3"
+core = "7.x"
+project = "paragraph_panes"
+datestamp = "1462885924"
+

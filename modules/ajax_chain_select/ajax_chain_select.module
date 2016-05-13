@@ -1,0 +1,250 @@
+<?php
+
+/**
+ * @file
+ * Custom form field for chained select controls.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function ajax_chain_select_menu() {
+  $items = array();
+
+  $items['ajax_chain_select/callback'] = array(
+    'page callback' => 'ajax_chain_select_element_callback',
+    // This form element can be used by not logged in user as well.
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_element_info().
+ */
+function ajax_chain_select_element_info() {
+  $elements['ajax_chain_select'] = array(
+    "#input" => TRUE,
+    "#process" => array('ajax_chain_select_element_process'),
+  );
+  return $elements;
+}
+
+/**
+ * Process callback for ac_select.
+ */
+function ajax_chain_select_element_process($element, &$form_state, $form) {
+
+  $element_name = $element['#name'];
+  $config = !empty($element['#config']) ? $element['#config'] : array();
+  $required_levels = !empty($element['#required_levels']) ? $element['#required_levels'] : 0;
+  $data_callback = !empty($element['#data_callback']) ? $element['#data_callback'] : '';
+  $settings = array(
+    'show_throbber' => isset($element['#show_throbber']) ? $element['#show_throbber'] : TRUE,
+    'progress_message' => isset($element['#progress_message']) ? $element['#progress_message'] : t('Please wait..'),
+  );
+
+  if (!function_exists($data_callback)) {
+    return array('#markup' => 'Data callback not defined');
+  }
+
+  // Checking if the form has been sumbitted or not.
+  $is_submitted = (!empty($form_state['input']));
+  $submitted_values = $form_state['values'][$element_name];
+
+  $chain_select_element = array(
+    '#array_parents' => array(),
+    '#tree' => FALSE,
+    '#attached' => array(
+      'js' => array(drupal_get_path('module', 'ajax_chain_select') . '/ajax_chain_select.js'),
+    ),
+  );
+
+  $chain_select_element[$element_name] = array(
+    '#element_name' => $element_name,
+    '#type' => 'fieldset',
+    '#tree' => TRUE,
+    '#id' => !empty($element['#id']) ? $element['#id'] : drupal_html_id('edit-' . implode('-', $element['#parents'])),
+    '#title' => !empty($element['#title']) ? $element['#title'] : '',
+    '#title_display' => !empty($element['#title_display']) ? $element['#title_display'] : 'before',
+    '#array_parents' => array(),
+    '#element_validate' => array('ajax_chain_select_custom_validate'),
+    '#states' => !empty($element['#states']) ? $element['#states'] : array(),
+    '#config' => $config,
+    '#data_callback' => $data_callback,
+  );
+
+  $chain_select_element[$element_name]['#attached']['js'][] = array(
+    'type' => 'setting',
+    'data' => array('ajax_chain_select' => array($chain_select_element[$element_name]['#id'] => $settings)),
+  );
+
+  $index = 0;
+  $levels_count = count($config);
+  $levels = array_keys($config);
+  $previous_level = $levels[0];
+  $previous_level_config = $config[$previous_level];
+
+  foreach ($config as $level => $level_config) {
+    $data = array();
+
+    switch ($index) {
+      case 0:
+        $data = $data_callback($level);
+        break;
+
+      default:
+        if ($is_submitted) {
+          if (!empty($submitted_values[$previous_level])) {
+            $data = $data_callback($level, $submitted_values[$previous_level]);
+          }
+        }
+        else {
+          if (!empty($previous_level_config['#default_value'])) {
+            $data = $data_callback($level, $previous_level_config['#default_value']);
+          }
+        }
+        break;
+    }
+
+    // Default value must be part of data of that level, if not, nullify it.
+    if (!empty($level_config['#default_value']) && !in_array($level_config['#default_value'], array_keys($data))) {
+      unset($level_config['#default_value']);
+    }
+
+    $chain_select_element[$element_name][$level] = array(
+      '#type' => 'select',
+      '#options' => $data,
+      '#title' => !empty($level_config['#title']) ? $level_config['#title'] : '',
+      '#empty_option' => !empty($level_config['#empty_option']) ? $level_config['#empty_option'] : t('- Select -'),
+      '#required' => ($index < $required_levels) ? TRUE : FALSE,
+      '#validated' => TRUE,
+      '#default_value' => !empty($level_config['#default_value']) ? $level_config['#default_value'] : NULL,
+      '#title_display' => !empty($level_config['#title_display']) ? $level_config['#title_display'] : 'before',
+      '#disabled' => (empty($data)) ? TRUE : FALSE,
+      '#attributes' => array('level' => $level),
+    );
+
+    if ($index != $levels_count - 1) {
+      $chain_select_element[$element_name][$level]['#attributes']['class'] = array('ajax-chain-select-select');
+    }
+
+    $index++;
+    $previous_level = $level;
+    $previous_level_config = $level_config;
+  }
+
+  $chain_select_element[$element_name]['dc'] = array(
+    '#type' => 'hidden',
+    '#value' => base64_encode($element['#data_callback']),
+    '#attributes' => ['class' => ['acs-dc']],
+  );
+
+  $chain_select_element[$element_name]['dch'] = array(
+    '#type' => 'hidden',
+    '#value' => ajax_chain_select_get_token($element['#data_callback']),
+    '#attributes' => ['class' => ['acs-dch']],
+  );
+
+  return $chain_select_element;
+}
+
+/**
+ * Custom function for ac_select element validate.
+ */
+function ajax_chain_select_custom_validate(&$element, &$form_state, $form) {
+  // Clean up fields 'dc' and 'dch'.
+  $element_name = $element['#element_name'];
+  unset($form_state['values'][$element_name]['dc']);
+  unset($form_state['values'][$element_name]['dch']);
+
+  $data_callback = $element['#data_callback'];
+  $config = $element['#config'];
+  $values = $form_state['values'];
+
+  $index = 0;
+  $levels = array_keys($config);
+  $previous_level = $levels[0];
+
+  foreach ($config as $level => $level_config) {
+
+    if ($index > 0) {
+      $data = $data_callback($level, $values[$element_name][$previous_level]);
+
+      if (!empty($data)) {
+
+        if (empty($element[$level]['#options'])) {
+          $element[$level]['#options'] = $data;
+        }
+        $element[$level]['#validated'] = FALSE;
+        _form_validate($element[$level], $form_state);
+      }
+    }
+    else {
+      $element[$level]['#validated'] = FALSE;
+      _form_validate($element[$level], $form_state);
+    }
+
+    $index++;
+    $previous_level = $level;
+  }
+}
+
+/**
+ * Callback function for fetching data for next step of ac_select.
+ */
+function ajax_chain_select_element_callback($level = 1, $previous_level_key = 0, $dc = NULL, $dch = NULL) {
+  $has_data = '0';
+  $data_callback = '';
+  $options = '';
+
+  if (!empty($dc)) {
+    $dc2 = base64_decode($dc);
+    if (ajax_chain_select_valid_token($dch, $dc2) && function_exists($dc2)) {
+      $data_callback = $dc2;
+      $data = $data_callback($level, $previous_level_key);
+    }
+  }
+
+  if (!empty($data)) {
+    $has_data = '1';
+    foreach ($data as $key => $value) {
+      $options .= '<option value="' . $key . '">' . $value . '</option>';
+    }
+  }
+  drupal_json_output(array('has_data' => $has_data, 'options' => $options));
+}
+
+/**
+ * Generates a token based on $value, and the private key.
+ *
+ * Note: This is similar to drupal_get_token but without using session_id.
+ *
+ * @param string $value
+ *   An additional value to base the token on.
+ *
+ * @return string
+ *   A 43-character URL-safe token for validation.
+ */
+function ajax_chain_select_get_token($value = '') {
+  return drupal_hmac_base64($value, drupal_get_private_key() . drupal_get_hash_salt());
+}
+
+/**
+ * Validates a token based on $value and the private key.
+ *
+ * Note: This is similar to drupal_valid_token but without using session_id.
+ *
+ * @param string $token
+ *   The token to be validated.
+ * @param string $value
+ *   An additional value to base the token on.
+ *
+ * @return bool
+ *   True for a valid token, false for an invalid token.
+ */
+function ajax_chain_select_valid_token($token, $value = '') {
+  return ($token === ajax_chain_select_get_token($value));
+}

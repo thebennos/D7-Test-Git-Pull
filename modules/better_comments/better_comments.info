@@ -1,0 +1,13 @@
+name = Better Comments
+description  = Provides better comment options to customize the comment form.
+core = 7.x
+package = "other"
+dependencies[] = comment
+configure =  admin/config/content/better-comments
+
+; Information added by Drupal.org packaging script on 2016-04-28
+version = "7.x-1.1"
+core = "7.x"
+project = "better_comments"
+datestamp = "1461843238"
+

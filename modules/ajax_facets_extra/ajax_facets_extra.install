@@ -1,0 +1,20 @@
+<?php
+
+/**
+ * @file
+ * Ajax Facets Extra install file.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function ajax_facets_extra_install() {
+  variable_set('ajax_facets_extra_override_widget', TRUE);
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function ajax_facets_extra_uninstall() {
+  variable_del('ajax_facets_extra_override_widget');
+}

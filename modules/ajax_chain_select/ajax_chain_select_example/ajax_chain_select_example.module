@@ -1,0 +1,212 @@
+<?php
+
+/**
+ * @file
+ * Sample module to illustrate use of ajax_chain_select.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function ajax_chain_select_example_menu() {
+  $items = array();
+  $items['ajax_chain_select_example'] = array(
+    'title' => 'Ajax Chain Select Example',
+    'description' => 'example form for ajax_chain_select',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ajax_chain_select_example_sample_form'),
+    // This form element can be used by not logged in user as well.
+    'access callback' => TRUE,
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Sample form to illustrate the use of ajax_chain_select.
+ */
+function ajax_chain_select_example_sample_form($form, &$form_state) {
+  $config = array(
+    'country' => array(
+      '#title' => t("Country"),
+      '#empty_option' => 'Select Country',
+      '#default_value' => 1,
+      '#title_display' => 'before',
+    ),
+    'state' => array(
+      '#title' => t("State"),
+      '#empty_option' => 'Select State',
+      '#default_value' => 1,
+    ),
+    'city' => array(
+      '#title' => t("City"),
+      '#empty_option' => 'Select City',
+    ),
+    'locality' => array(
+      '#title' => t("Locality"),
+    ),
+  );
+
+  $form['region'] = array(
+    '#type' => 'ajax_chain_select',
+    '#title' => t('Region'),
+    '#config' => $config,
+    '#required_levels' => 3,
+    '#show_throbber' => TRUE,
+    '#progress_message' => t('Please wait..'),
+    '#data_callback' => 'ajax_chain_select_example_fetchdata',
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Save',
+  );
+
+  return $form;
+}
+
+/**
+ * Sample form submit callback.
+ */
+function ajax_chain_select_example_sample_form_submit($form, &$form_state) {
+  $values = $form_state['values']['region'];
+  $submitted_values = print_r($values, 1);
+  drupal_set_message(t('The form has been successfully submitted with values: <pre>@values</pre>', array('@values' => $submitted_values)));
+}
+
+/**
+ * Data callback implementation.
+ */
+function ajax_chain_select_example_fetchdata($level = 0, $previous_level_key = 0) {
+
+  $data = array();
+
+  switch ($level) {
+
+    case 'country':
+      // Ideally this should be a function fetching data from db or xml.
+      $data = ajax_chain_select_example_get_all_countries();
+      break;
+
+    case 'state':
+      // Ideally this should be a function fetching data from db or xml.
+      $data = ajax_chain_select_example_get_states_by_country($previous_level_key);
+      break;
+
+    case 'city':
+      // Ideally this should be a function fetching data from db or xml.
+      $data = ajax_chain_select_example_get_cities_by_state($previous_level_key);
+      break;
+
+    case 'locality':
+      // Ideally this should be a function fetching data from db or xml.
+      $data = ajax_chain_select_example_get_locality_by_city($previous_level_key);
+      break;
+  }
+
+  return $data;
+}
+
+/**
+ * A function to get all countries.
+ *
+ * @return array
+ *   Array of countries list.
+ */
+function ajax_chain_select_example_get_all_countries() {
+  $data = array(
+    1 => 'Pakistan',
+    2 => 'United States',
+  );
+
+  return $data;
+}
+
+/**
+ * A function to get all states of a given country.
+ *
+ * @return array
+ *   Array of states list.
+ */
+function ajax_chain_select_example_get_states_by_country($country_id) {
+  $states = array();
+  $data = array(
+    1 => array(
+      1 => 'Sindh',
+      2 => 'Punjab',
+      3 => 'Balochistan',
+    ),
+    2 => array(
+      4 => 'New York',
+      5 => 'California',
+    ),
+  );
+
+  if (!empty($data[$country_id])) {
+    $states = $data[$country_id];
+  }
+
+  return $states;
+}
+
+/**
+ * A function to get all cities of a given state.
+ *
+ * @return array
+ *   Array of cities list.
+ */
+function ajax_chain_select_example_get_cities_by_state($state_id) {
+  $cities = array();
+  $data = array(
+    1 => array(
+      1 => 'Karachi',
+      2 => 'Sukkur',
+    ),
+    2 => array(
+      3 => 'Lahore',
+      4 => 'Multan',
+    ),
+    4 => array(
+      5 => 'New York City',
+      6 => 'Kingston',
+      7 => 'Batavia',
+    ),
+    5 => array(
+      8 => 'San Fransisco',
+      9 => 'Los Angeles',
+    ),
+  );
+
+  if (!empty($data[$state_id])) {
+    $cities = $data[$state_id];
+  }
+
+  return $cities;
+}
+
+/**
+ * A function to get all localities of a given city.
+ *
+ * @return array
+ *   Array of localities list.
+ */
+function ajax_chain_select_example_get_locality_by_city($city_id) {
+  $localities = array();
+  $data = array(
+    1 => array(
+      1 => 'North Karachi',
+      2 => 'South Karachi',
+    ),
+    5 => array(
+      3 => 'Locality 1',
+      4 => 'Locality 2',
+    ),
+  );
+
+  if (!empty($data[$city_id])) {
+    $localities = $data[$city_id];
+  }
+
+  return $localities;
+}

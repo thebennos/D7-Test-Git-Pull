@@ -1,0 +1,66 @@
+<?php
+
+/**
+ * @file
+ * Bridge between Paragraph Panes & Location modules.
+ */
+
+/**
+ * Implements hook_element_info_alter().
+ *
+ * Adds our validation function to the location element.
+ */
+function paragraph_panes_location_element_info_alter(&$type) {
+  $type['location_element']['#element_validate'][] = 'paragraph_panes_location_validate';
+}
+
+/**
+ * The validation callback function which was added to the location element.
+ *
+ * Adds the latitude & longitude to a location.
+ * This is normally done by the Location module on save,
+ * but since we do not save anything (we store it in the pane configuration),
+ * we have to add it ourselves.
+ */
+function paragraph_panes_location_validate(&$element, &$form_state) {
+  $location_element =& drupal_array_get_nested_value($form_state['values'], $element['#parents']);
+  _location_geo_logic($location_element, array(), NULL, FALSE, TRUE);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ *
+ * Adds our submit handler.
+ */
+function paragraph_panes_location_form_paragraph_panes_edit_form_alter(&$form, &$form_state, $form_id) {
+  if (module_exists('gmap')) {
+    // Attach the JS needed to show a gmap. The AJAX request to add a paragraph
+    // pane with a location element as one of the field will otherwise not work,
+    // since it will call the function google(), which wouldn't exist.
+    include_once drupal_get_path('module', 'gmap') . '/lib/Drupal/gmap/GmapDefaults.php';
+    if (!isset($form['#attached'])) {
+      $form['#attached'] = array();
+    }
+    $form['#attached'] = array_merge($form['#attached'], array(
+        '#attached' => array('js' => Drupal\gmap\GmapDefaults::getInstance()->getBaseJs()),
+      )
+    );
+  }
+}
+
+/**
+ * Implements hook_entity_prepare_view().
+ */
+function paragraph_panes_location_entity_prepare_view($entities, $type, $langcode) {
+  if ($type == 'paragraphs_item') {
+    foreach ($entities as &$entity) {
+      $fields = field_info_instances('paragraphs_item', $entity->bundle);
+      foreach ($fields as $field) {
+        $field_info = field_info_field($field['field_name']);
+        if ($field_info['type'] == 'location' && $field_info['module'] == 'location_cck') {
+          $entity->in_preview = TRUE;
+        }
+      }
+    }
+  }
+}

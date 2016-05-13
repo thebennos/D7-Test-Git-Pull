@@ -1,0 +1,14 @@
+name = Field Collection Style
+description = Field Collection styling improvements.
+dependencies[] = field_collection
+package = Fields
+core = 7.x
+
+
+
+; Information added by Drupal.org packaging script on 2016-05-01
+version = "7.x-1.2"
+core = "7.x"
+project = "fc_style"
+datestamp = "1462112649"
+

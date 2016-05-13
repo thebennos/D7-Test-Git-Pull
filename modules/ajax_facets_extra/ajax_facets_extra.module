@@ -1,0 +1,201 @@
+<?php
+
+/**
+ * @file
+ * Ajax Facets Extra module file.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function ajax_facets_extra_menu() {
+  $items['admin/config/search/ajax_facets_extra'] = array(
+    'title' => 'Ajax Facets Extra',
+    'description' => 'Enable or disable the Ajax Facets widget overriding.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ajax_facets_extra_settings_form'),
+    'access arguments' => array('administer search_api'),
+    'file' => 'ajax_facets_extra.admin.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_ctools_plugin_api().
+ */
+function ajax_facets_extra_ctools_plugin_api($owner, $api) {
+  if ('facetapi' == $owner && 'facetapi_defaults' == $api) {
+    return array('version' => 1);
+  }
+}
+
+/**
+ * Implements hook_facetapi_widgets().
+ */
+function ajax_facets_extra_facetapi_widgets() {
+  return array(
+    'facetapi_ajax_extra_checkboxes' => array(
+      'handler' => array(
+        'label' => 'Ajax Extra multiple checkboxes',
+        'class' => 'FacetapiAjaxWidgetExtraCheckboxes',
+        'query types' => array('term'),
+      ),
+    ),
+    'facetapi_ajax_extra_select' => array(
+      'handler' => array(
+        'label' => 'Ajax Extra selectbox',
+        'class' => 'FacetapiAjaxWidgetExtraSelect',
+        'query types' => array('term'),
+      ),
+    ),
+    'facetapi_ajax_extra_links' => array(
+      'handler' => array(
+        'label' => 'Ajax Extra links',
+        'class' => 'FacetapiAjaxWidgetExtraLinks',
+        'query types' => array('term'),
+      ),
+    ),
+    'facetapi_ajax_extra_ranges' => array(
+      'handler' => array(
+        'label' => 'Ajax Extra ranges',
+        'class' => 'FacetapiAjaxWidgetExtraRanges',
+        'query types' => array('term'),
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_ctools_plugin_post_alter().
+ *
+ * @see https://www.drupal.org/node/2014289#comment-7795315
+ */
+function ajax_facets_extra_ctools_plugin_post_alter(&$plugin, &$info) {
+  if (!empty($info['hook']) && $info['hook'] == 'facetapi_widgets' &&
+    variable_get('ajax_facets_extra_override_widget', FALSE)
+  ) {
+    switch ($plugin['name']) {
+      case 'facetapi_ajax_checkboxes':
+        $plugin['handler']['class'] = 'FacetapiAjaxWidgetExtraCheckboxes';
+        break;
+
+      case 'facetapi_ajax_select':
+        $plugin['handler']['class'] = 'FacetapiAjaxWidgetExtraSelect';
+        break;
+
+      case 'facetapi_ajax_links':
+        $plugin['handler']['class'] = 'FacetapiAjaxWidgetExtraLinks';
+        break;
+
+      case 'facetapi_ajax_ranges':
+        $plugin['handler']['class'] = 'FacetapiAjaxWidgetExtraRanges';
+        break;
+    }
+  }
+}
+
+/**
+ * Add required JS and handle single inclusion.
+ *
+ * @param string $facet
+ *   Facet.
+ */
+function ajax_facets_extra_add_ajax_js($facet) {
+  static $included = FALSE;
+  if (!$included) {
+    $included      = TRUE;
+    $js_url_exists = FALSE;
+    $module_path   = drupal_get_path('module', 'ajax_facets_extra');
+    drupal_add_js($module_path . '/misc/ajax_facets_extra.js');
+
+    // Add url.js file if exists.
+    if (module_exists('libraries')) {
+      $js_url_path = libraries_get_path('js-url');
+
+      if ($js_url_path) {
+        $js_url_exists = TRUE;
+        drupal_add_js($js_url_path . '/url.min.js', array('group' => JS_LIBRARY));
+      }
+    }
+
+    $setting['facetapi'] = array(
+      'isUrlJsExists' => $js_url_exists,
+    );
+    drupal_add_js($setting, 'setting');
+  }
+}
+
+/**
+ * Implements hook_ajax_facets_data_alter().
+ */
+function ajax_facets_extra_ajax_facets_data_alter(&$commands, $view) {
+  // Refresh current search block.
+  if (!empty($_GET['current_search'])) {
+    $name       = $_GET['current_search'];
+    $block      = ajax_facets_extra_block_view('current_search|' . $name);
+    $content    = drupal_render($block['content']);
+    $commands[] = ajax_command_replace('#ajax-current-search-block-' . $name, $content);
+  }
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function ajax_facets_extra_block_info() {
+  $blocks = array();
+
+  // Loads settings for enabled facets.
+  ctools_include('export');
+  foreach (ctools_export_crud_load_all('current_search') as $config) {
+    if (empty($config->disabled)) {
+      $blocks['current_search|' . $config->name] = array(
+        'info' => 'Current search (Ajax): ' . $config->label,
+        'cache' => DRUPAL_NO_CACHE,
+      );
+    }
+  }
+
+  // Returns available blocks.
+  return $blocks;
+}
+
+/**
+ * Implements hook_ctools_block_info().
+ *
+ * @see http://drupal.org/node/1669918
+ */
+function ajax_facets_extra_ctools_block_info($module, $delta, &$info) {
+  // Give the current search blocks it's own categories.
+  $info['category'] = t('Current Search Blocks - Ajax');
+  // Allow blocks to be used before the search results in Panels.
+  $info['render last'] = TRUE;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function ajax_facets_extra_block_view($delta = '') {
+  $block = array();
+
+  list($type, $name) = explode('|', $delta);
+
+  switch ($type) {
+    case 'current_search':
+      ajax_facets_extra_add_ajax_js(NULL);
+
+      $block = current_search_block_view($name);
+
+      $block['content']['#attached']['js'][] = array(
+        'data' => array('facetapi' => array('current_search' => $name)),
+        'type' => 'setting',
+      );
+
+      $block['content']['#prefix'] = '<div id="ajax-current-search-block-' .
+        $name . '" data-name="' . $name . '" class="current-search-blocks-ajax-extra">';
+      $block['content']['#suffix'] = '</div>';
+      break;
+  }
+
+  return $block;
+}

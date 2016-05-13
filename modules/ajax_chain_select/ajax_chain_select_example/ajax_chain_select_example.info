@@ -1,0 +1,12 @@
+name = Ajax Chain Select Example
+description = "Example module for showing the use of Ajax Chain Select"
+package = Form Elements
+core = 7.x
+dependencies[] = ajax_chain_select
+
+; Information added by Drupal.org packaging script on 2016-05-02
+version = "7.x-1.0"
+core = "7.x"
+project = "ajax_chain_select"
+datestamp = "1462184688"
+

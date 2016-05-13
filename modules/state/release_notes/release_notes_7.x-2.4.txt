@@ -1,0 +1,18 @@
+State 7.x-2.4
+
+
+Maintenance release
+
+
+New features
+------------
+- Telling the user when logged out due to session timeout is now optional;
+  default 'on'.
+
+Bug fixes
+---------
+- Support site installed in subdir; having no dedicated virtualhost.
+
+Install/update notes
+--------------------
+Clear cache.

@@ -1,0 +1,84 @@
+<?php
+
+/**
+ * Implements hook_update_N().
+ *
+ * Corrects file usage for files which are not yet deleted by a cron run due
+ * to bug about not tracking the usage (see https://www.drupal.org/node/2678836 ).
+ */
+function paragraph_panes_update_7001(&$sandbox) {
+  $fixed = array();
+  $missing = array();
+  $identifier = '{s:3:"fid"';
+  $query = <<<SQL
+SELECT did, configuration, subtype, panel
+FROM {panels_pane} pp
+WHERE type = :type
+AND configuration LIKE :search
+SQL;
+
+  $configs = db_query($query, array(
+    ':search' => "%$identifier%",
+    ':type' => 'paragraph_panes',
+  ))->fetchAll();
+  foreach ($configs as $config) {
+    $identifier = '%s:3:"did";s:' . strlen($config->did) . ':"' . $config->did . '"%';
+    $query = <<<SQL
+SELECT name, task, subtask
+FROM {page_manager_handlers} WHERE conf LIKE :search
+SQL;
+    $handler = db_query($query, array(
+      ':search' => "%$identifier%",
+    ))->fetch();
+
+    $configuration = unserialize($config->configuration);
+    foreach ($configuration as $field => $values) {
+      _paragraph_panes_check_values($values, $handler->name, $config->subtype, $config->panel, $handler->task, $handler->subtask, $fixed, $missing);
+    }
+  }
+
+  $fixed = implode('</li><li>', $fixed);
+  $missing = implode('</li><li>', $missing);
+
+  $out = '';
+  if (!empty($fixed)) {
+    $out .= "<p>Fixed file usage for: </p><ul><li>$fixed</li></ul>";
+  }
+  if (!empty($missing)) {
+    $out .= "<h2>IMPORTANT!</h2><p>Missing files: </p><ul><li>$missing</li></ul>";
+  }
+
+  return $out;
+}
+
+/**
+ * Checks recursively in a panel's configuration for usage of files.
+ */
+function _paragraph_panes_check_values($values, $pane_name, $pane_type, $panel_name, $task, $subtask, &$fixed, &$missing) {
+  if (is_array($values)) {
+    foreach ($values as $value) {
+      foreach ($value as $k => $v) {
+        if (is_array($v) && !empty($v[LANGUAGE_NONE])) {
+          _paragraph_panes_check_values($v[LANGUAGE_NONE], $pane_name, $pane_type, $panel_name, $task, $subtask, $fixed, $missing);
+        }
+        elseif ($k == 'fid') {
+          $file = file_load($value['fid']);
+          if ($file) {
+            $usage = file_usage_list($file);
+            if (empty($usage) || !in_array('paragraph_panes', array_keys($usage))) {
+              $fixed[] = 'Added usage for ' . $file->uri . PHP_EOL;
+              file_usage_add($file, 'paragraph_panes', 'paragraph_pane', 1);
+            }
+          }
+          else {
+            $operation = $task;
+            if ($subtask) {
+              $operation .= "-$subtask";
+            }
+            $missing[] = 'File ' . $value['fid'] . ': reupload it to ' . l('the pane', '/admin/structure/pages/nojs/operation/' . $operation. '/handlers/' . $pane_name . '/content') . ', used in a pane of type "' . $pane_type . '" in panel "' . $panel_name . '".'. PHP_EOL;
+          }
+        }
+      }
+    }
+  }
+}

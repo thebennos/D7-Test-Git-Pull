@@ -1,0 +1,131 @@
+div.comment-body {
+  border: 1px solid #ccc;
+  display: inline-block;
+  margin: 10px 0;
+  padding: 5px 0;
+  width: 90%;
+  min-width:400px
+}
+.indented .comment-body {
+    width: 86%;
+	margin-left: 3px;
+}
+#edit-subject {
+  width: 400px;
+}
+.better-comments .form-item {
+  margin-top: 0 !important;
+}
+.comment-user-picture {
+  display: inline;
+}
+
+.better-comment-wrapper {
+    float: left;
+    width: 100%;
+}
+.comment div.user-picture {
+  width: 70px;
+  height: 70px;
+  float: left;
+}
+.better-comments img {
+ // padding: 0 5px 0 0 !important;
+}
+.comment div.user-picture img {
+  margin-left: 0;
+  height: 70px;
+}
+.user-picture {
+  display: inline;
+  float: left !important;
+}
+div.comment-content {
+    padding: 5px;
+    float: left;
+	 width: 85%;
+}
+.username {
+  font-weight: bold;
+}
+div[class*="indented"] {
+    float: left;
+    margin-left: 25px;
+}
+div[id*="edit-comment-body"] {
+    float: left;
+    width: 83%;
+}
+.comment-body .user-picture img,
+.comment-user-picture img {
+  height: 60px;
+  margin: 0 5px;
+  width: 60px;
+}
+#comment-form, .comment-form {
+    min-width: 400px;
+    width: 98%;
+}
+.comment-form .comment-user-picture img {
+  border: 1px solid #ccc;
+  border-right: none;
+}
+#better-comments-text {
+  height: 62px;
+  resize: none;
+  border-radius: 0;
+}
+textarea[id*="edit-comment-body-und-"] {
+  width: 410px;
+  height: 70px;
+}
+div.grippie {
+  display: none;
+}
+#comments {
+  border-top: 1px solid #cccccc;
+}
+#comments .form-actions {
+    float: left;
+    margin: 0px;
+    padding: 0px;
+    width: 100%;
+}
+div[class*="indented"] .comment-form {
+    background: #efefef;
+    float: left;
+    padding: 10px;
+}
+.use-ajax.button,
+.button.ajax-processed {
+  border-radius: 1px;
+  margin-left: 5px;
+}
+.better-comments-confirm,
+.preview {
+  background: none repeat scroll 0 0 #ffffff;
+  border: 1px solid #cccccc;
+  box-shadow: 0 2px 26px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.1);
+  margin-bottom: 12px;
+  min-height: 85px;
+  padding: 10px;
+  width: 375px;
+}
+.preview .comment-body {
+  border: medium none;
+}
+.better-comments-confirm .form-actions {
+  float: right;
+  margin: 7px 14px;
+}
+.better-comments-confirm .form-submit.ajax-processed {
+  border-radius: 0;
+  margin: 0;
+}
+.ajax-progress .throbber {
+  position: absolute;
+  z-index: 999;
+  height: 20px; /* tweak this according to your gif */
+  width: 20px; /* tweak this according to your gif */
+  margin: 2px;
+}

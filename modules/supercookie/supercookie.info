@@ -1,0 +1,11 @@
+name = Supercookie
+description = Set a persistent cookie regardless of a user's browser settings.
+core = 7.x
+configure = admin/config/people/supercookie
+
+; Information added by Drupal.org packaging script on 2016-04-11
+version = "7.x-1.6"
+core = "7.x"
+project = "supercookie"
+datestamp = "1460388240"
+

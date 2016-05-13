@@ -1,0 +1,269 @@
+<?php
+
+/**
+ * @file
+ * This module allows you to add paragraph items to panels in Page Manager.
+ */
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function paragraph_panes_ctools_plugin_directory($owner, $plugin_type) {
+  if ($owner == 'ctools') {
+    return 'plugins/' . $plugin_type;
+  }
+}
+
+/**
+ * The 'edit form' callback for the content type.
+ */
+function paragraph_panes_edit_form($form, &$form_state) {
+  $entity_type = 'paragraphs_item';
+  $bundle_name = $form_state['subtype_name'];
+  $entity = new ParagraphsItemEntity(array('bundle' => $bundle_name));
+
+  // Initialize #parents if not set to avoid warnings.
+  if (!isset($form['#parents'])) {
+    $form['#parents'] = array();
+  }
+
+  // Load the field form for each field of the paragraph bundle.
+  $fields = field_info_instances('paragraphs_item', $bundle_name);
+  foreach ($fields as $field) {
+    $field_name = $field['field_name'];
+    $field_info = field_info_field($field_name);
+    $instance = field_info_instance($entity_type, $field_name, $bundle_name);
+    $items = isset($form_state['conf'][$field_name]) ? $form_state['conf'][$field_name] : array();
+    if (!empty($items)) {
+      _paragraph_panes_restore_entities($items);
+    }
+
+    $field_form = field_default_form($entity_type, $entity, $field_info, $instance, LANGUAGE_NONE, $items, $form, $form_state);
+    $form = array_merge($form, $field_form);
+  }
+
+  return $form;
+}
+
+/**
+ * The submit form stores the data in $conf.
+ */
+function paragraph_panes_edit_form_submit($form, &$form_state) {
+  $fields = field_info_instances('paragraphs_item', $form_state['subtype_name']);
+  foreach ($fields as $field) {
+    $field_name = $field['field_name'];
+    $field_value = _paragraph_panes_sanitize_values($form_state['values'][$field_name][LANGUAGE_NONE]);
+
+    // Handle file usage.
+    $field_info = field_info_field($field_name);
+    $old_values = isset($form_state['conf'][$field_name]) ? $form_state['conf'][$field_name] : array();
+    _paragraph_panes_file_usage_recursive($field_info, $field_value, $old_values);
+
+    $form_state['conf'][$field_name] = $field_value;
+  }
+}
+
+/**
+ * Sanitizes the form_values array for a field.
+ *
+ * @param array $field_values
+ *   The form_values array.
+ *
+ * @return array
+ *   The array with empty and invalid/unneeded values removed.
+ */
+function _paragraph_panes_sanitize_values(array $field_values) {
+  $clean = array();
+
+  // Strip out add more button which is not a value.
+  if (isset($field_values['add_more'])) {
+    unset($field_values['add_more']);
+  }
+
+  foreach ($field_values as $key => &$field_value) {
+    if (is_array($field_value)) {
+      // Serialize entity since otherwise it can not be exported in features,
+      // since features tries to eval() each var_export(), which in this case
+      // would include a Entity::set_state call and that function does not exist.
+      if (isset($field_value['entity'])) {
+        $field_value['serialized_entity'] = serialize($field_value['entity']);
+        unset($field_value['entity']);
+      }
+
+      // Strip out actions which do not contain values anyhow.
+      if (isset($field_value['actions'])) {
+        unset($field_value['actions']);
+      }
+
+      // Check if there are nested entities.
+      $field_value = _paragraph_panes_sanitize_values($field_value);
+    }
+
+    // Filter out the empty values for unlimited multi-value fields.
+    $valid_field = FALSE;
+    $value_keys = array('value', 'fid', 'url', 'target_id');
+    $value_key_found = FALSE;
+    if (is_array($field_value)) {
+      foreach ($value_keys as $value_key) {
+        if (array_key_exists($value_key, $field_value)) {
+          $value_key_found = TRUE;
+        }
+      }
+    }
+    if (!$value_key_found) {
+      // Fields which do not contain a 'value key' are always valid,
+      // and thus should be included.
+      $valid_field = TRUE;
+    }
+    else {
+      // Check if the 'value key' is not empty, in which case the field should
+      // also be included.
+      foreach ($value_keys as $value_key) {
+        if (!empty($field_value[$value_key])) {
+          $valid_field = TRUE;
+          break;
+        }
+      }
+    }
+
+    if ($valid_field) {
+      $clean[$key] = $field_value;
+    }
+  }
+
+  return $clean;
+}
+
+/**
+ * @param $field_info
+ *   The field info for the $field_value.
+ * @param $field_value
+ *   The current values for the field, from the form.
+ * @param $old_values
+ *   The old values for the field, from the pane configuration.
+ */
+function _paragraph_panes_file_usage_recursive($field_info, $field_value, $old_values) {
+  // Handle nested paragraph items.
+  if ($field_info['type'] == 'paragraphs') {
+    foreach ($field_value as $key => $subfields) {
+      foreach ($subfields as $subfield_name => $subfield_value) {
+        if (!is_array($subfield_value)) {
+          continue;
+        }
+        $subfield_info = field_info_field($subfield_name);
+        $old_sub_values = isset($old_values[$key][$subfield_name][LANGUAGE_NONE])? $old_values[$key][$subfield_name][LANGUAGE_NONE] : array();
+        _paragraph_panes_file_usage_recursive($subfield_info, $subfield_value[LANGUAGE_NONE], $old_sub_values);
+      }
+    }
+  }
+  else {
+    _paragraph_panes_file_usage($field_info, $field_value, $old_values);
+  }
+}
+
+/**
+ * Handles the file_usage records.
+ *
+ * Adds a file_usage record, or increases its count if it already exist,
+ * for all files & images uploaded into a paragaph pane.
+ * Then it decreases the file_usage count for all "old" values, i.e. the ones
+ * in the current pane config.
+ * Finally it tries to delete the old files, which only happens if file count is 0 now.
+ *
+ * @param array $field_info
+ *   The field info for the $field_value.
+ * @param array $field_value
+ *   The current values for the field, from the form.
+ * @param array $old_values
+ *   The old values for the field, from the pane configuration.
+ */
+function _paragraph_panes_file_usage($field_info, $field_value, $old_values) {
+  if (isset($field_info['type'])) {
+    // Handle files & images.
+    if (in_array($field_info['type'], array('file', 'image'))) {
+      // Add usage for new values.
+      foreach ($field_value as $item) {
+        if (isset($item['fid'])) {
+          $file = (object) $item;
+          file_usage_add($file, 'paragraph_panes', 'paragraph_pane', 1);
+        }
+      }
+
+      // Collect fids from old values.
+      $fids = array();
+      foreach ($old_values as $item) {
+        if (isset($item['fid'])) {
+          $fids[] = $item['fid'];
+        }
+      }
+
+      // Delete usage for collected fids.
+      if (!empty($fids)) {
+        $files = file_load_multiple($fids);
+        foreach ($files as $file) {
+          // Decrease file usage by one.
+          file_usage_delete($file, 'paragraph_panes', 'paragraph_pane', 1);
+          // Delete file if no longer used anywhere.
+          file_delete($file);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Unserializes the enitities back again.
+ *
+ * @param array $values
+ *    The values array which contains the serialized entities.
+ */
+function _paragraph_panes_restore_entities(array &$values) {
+  foreach ($values as &$value) {
+    if (is_array($value) && isset($value['serialized_entity'])) {
+      $value['entity'] = unserialize($value['serialized_entity']);
+      unset($value['serialized_entity']);
+    }
+
+    if (is_array($value)) {
+      _paragraph_panes_restore_entities($value);
+    }
+  }
+}
+
+/**
+ * Implements hook_help().
+ */
+function paragraph_panes_help($path, $arg) {
+  switch ($path) {
+    case 'admin/help#paragraph_panes':
+      $filepath = dirname(__FILE__) . '/README.md';
+      if (file_exists($filepath)) {
+        $readme = file_get_contents($filepath);
+      }
+      else {
+        $filepath = dirname(__FILE__) . '/README.txt';
+        if (file_exists($filepath)) {
+          $readme = file_get_contents($filepath);
+        }
+      }
+      if (!isset($readme)) {
+        return NULL;
+      }
+      if (module_exists('markdown')) {
+        $filters = module_invoke('markdown', 'filter_info');
+        $info = $filters['filter_markdown'];
+
+        if (function_exists($info['process callback'])) {
+          $output = $info['process callback']($readme, NULL);
+        }
+        else {
+          $output = '<pre>' . $readme . '</pre>';
+        }
+      }
+      else {
+        $output = '<pre>' . $readme . '</pre>';
+      }
+
+      return $output;
+  }
+}
