@@ -1,0 +1,111 @@
+<?php
+
+/**
+ * @file
+ * Update, and uninstall functions for the Recacher module.
+ */
+
+
+/**
+ * Implements hook_uninstall().
+ */
+function recacher_uninstall() {
+
+  db_delete('variable')
+    ->condition('name', 'recacher_%', 'LIKE')
+    ->execute();
+
+  cache_clear_all('variables', 'cache_bootstrap');
+}
+
+
+/**
+ * Implements hook_schema().
+ *
+ * See http://drupal.org/node/146939
+ */
+function recacher_schema() {
+
+  $schema['recacher'] = array(
+    'description' => 'Data storage for the Recacher module.',
+    'fields' => array(
+      'hash' => array(
+        'type' => 'varchar',
+        'length' => 32,
+        'description' => 'Unique key for fast search (a hash of the given URL).',
+        'not null' => TRUE,
+      ),
+      'expirations' => array(
+        'type' => 'int',
+        'size' => 'big', // big int unsigned: 8 B (18446744073709551615)
+        'description' => 'Number of times this URL has been expired before it could be re-cached.',
+        'unsigned' => TRUE,
+        'default' => 0,
+        'not null' => TRUE,
+      ),
+      'url' => array(
+        'type' => 'varchar', // varchar faster than text on MySQL (not creating temp table on disk); see http://drupal.org/node/146939#comment-2281846
+        'length' => 2048, // see http://stackoverflow.com/a/417184/269383
+        'description' => 'URL expired by Cache Expiration that we need to re-cache.',
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('hash'),
+    'indexes' => array(
+      'expirations' => array('expirations'),
+    ),
+  );
+
+return $schema;
+}
+
+
+/**
+ * Add the recacher table.
+ */
+/*
+function recacher_update_7001() {
+  if (!db_table_exists('recacher')) {
+    $schema = recacher_schema();
+    db_create_table('recacher', $schema['recacher']);
+    return st('Add the recacher table for the Recacher module.');
+  }
+}
+*/
+
+
+/**
+ * Implements hook_requirements().
+ */
+/*
+function recacher_requirements($phase) {
+  $requirements = array();
+  $t = get_t();
+
+  // Verify that the user has authenticated with Recacher.
+  // If not, display a warning on the status page.
+  if ($phase == 'runtime') {
+    $params = array(
+      '%recacher_profile_id' => variable_get('recacher_profile_id', 0),
+    );
+    $requirements['recacher_authentication'] = array(
+      'title' => $t('Recacher'),
+      'description' => $t('Recacher account ga:%recacher_profile_id has been authenticated. You can change it or revoke authentication <a href="/admin/config/system/recacher/authentication">here</a>.', $params),
+      'severity' => REQUIREMENT_OK,
+      'value' => $t('A Recacher profile is authenticated: OK'),
+    );
+    $authenticated = FALSE;
+    // It's a weak test but better than none.
+    if (variable_get('recacher_profile_id') <> '') {
+      $authenticated = TRUE;
+    }
+    if (!$authenticated) {
+      $requirements['recacher_authentication']['title'] = $t('Recacher requirements');
+      $requirements['recacher_authentication']['description'] = $t('No Recacher profile has been authenticated. Recacher can not fetch any new data. Please authenticate <a href="/admin/config/system/recacher/authentication">here</a>.');
+      $requirements['recacher_authentication']['severity'] = REQUIREMENT_ERROR;
+      $requirements['recacher_authentication']['value'] = $t('No Recacher profile has been authenticated!');
+    }
+  }
+  return $requirements;
+}
+*/

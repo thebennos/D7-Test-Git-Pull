@@ -1,0 +1,218 @@
+<?php
+
+/**
+ * @file
+ * Basic functions for this module.
+ */
+
+/**
+ * Load the necessary include files.
+ */
+module_load_include('inc', 'recacher', 'recacher_settings');
+
+/**
+ * Valid permissions for this module
+ * @return array An array of valid permissions for the test_module module
+ */
+function recacher_permission() {
+  return array(
+  'administer recacher' => array(
+    'title' => t('Administer Recacher'),
+    'description' => t('Set roles that may access the settings of Recacher.'),
+    ),
+  );
+}
+
+/**
+ * Display help and module information
+ * Implements hook_help().
+ * @param path which path of the site we're displaying help
+ * @param arg array that holds the current path as would be returned from arg() function
+ * @return help text for the path
+ */
+function recacher_help($path, $arg) {
+  if ($path == 'admin/help#recacher') {
+    $output = file_get_contents(drupal_get_path('module', 'recacher') . '/README.txt');
+    return nl2br($output);
+  }
+}
+
+/**
+ * Menu for this module
+ * @return array An array with this module's settings.
+ */
+function recacher_menu() {
+  $items = array();
+
+  $items['admin/config/system/recacher'] = array(
+    'title' => t('Recacher'),
+    'description' => t('Configure Recacher module'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('recacher_admin'),
+    'access arguments' => array('administer recacher'),
+    //'type' => MENU_NORMAL_ITEM,  // Not necessary since this is the default.
+    'weight' => 0,
+    );
+
+  // For the default local task, we need very little configuration, as the callback and other conditions are handled by the parent callback.
+  $items['admin/config/system/recacher/settings'] = array(
+    'title' => t('Settings'),
+    //'description' => 'General settings',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 1,
+    );
+
+  // A shortcut to the permissions settings for this module.
+  $items['admin/config/system/recacher/permissions'] = array(
+    'title' => t('Permissions'),
+    'description' => t('Configure access permissions'),
+    'page callback' => 'recacher_perms',
+    'access arguments' => array('administer recacher'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 5,
+    );
+
+  return $items;
+}
+
+/**
+ * Redirect to the module's permission settings. A callback from hook_menu().
+ */
+function recacher_perms() {
+  drupal_goto('admin/people/permissions', array('fragment' => 'module-recacher'));
+}
+
+/**
+ * Implements hook_cron().
+ *
+ */
+function recacher_cron() {
+
+  $defaultcroninterval = variable_get('recacher_cron_interval', 'default');
+  if (is_numeric($defaultcroninterval)){
+    // If a number of minutes was specified
+    $interval = 60*variable_get('recacher_cron_interval', 'default'); // $interval must contain value in seconds.
+    // We don't want to act every time cron runs (which could be every minute) so keep a time for the next run in a variable.
+    if (REQUEST_TIME >= variable_get('recacher_cron_next_execution', 0)) {
+
+      // Important to set it before the job because if they take long and there is another cron triggered...
+      variable_set('recacher_cron_next_execution', REQUEST_TIME + $interval);
+
+    }
+    else {
+      // We must wait some more before this cron can be executed.
+      dpm('recacher_cron not running because the time elapsed is shorter than the set cron interval');
+      return;
+    }
+  }
+  else {
+    // If no number is set (set to 'default'), then we should void the execution time pointer.
+    variable_set('recacher_cron_next_execution', 0);
+  }
+
+  // Go recachin'
+  recacher_crawler();
+
+}
+
+/**
+ * Implements hook_expire_cache().
+ *
+ * Provides integration with the Cache Expiration (expire) module.
+ */
+function recacher_expire_cache($urls, $wildcards, $object_type, $object) {
+
+  foreach($urls as $url){
+    // https://www.drupal.org/node/310085
+    db_merge('recacher')
+      ->key(array('hash' => md5($url)))
+      ->fields(array(
+        'url' => $url,
+      ))
+      ->expression('expirations', 'expirations + :inc', array(':inc' => 1))
+      ->execute();
+  }
+
+  if ($paths = array_keys($wildcards, TRUE)) {
+    //$api->purgeKeys($paths);
+  }
+}
+
+/**
+ * Re-cache expired URLs.
+ */
+function recacher_crawler(){
+
+  $selectdburls = db_select('recacher', 'r')
+    ->fields('r', array('hash', 'url'))
+    //->condition('nid', $nidhere, '=')
+    ->orderBy('expirations', 'DESC') // ORDER BY expirations, descending, so that we recache the most expired URLs earlier.
+    ->execute();
+
+  $dburls = array();
+  $cnt = 0;
+  $recacher_max_urls = variable_get('recacher_max_urls', '');
+  if (!is_numeric($recacher_max_urls)) $recacher_max_urls = FALSE;
+  foreach($selectdburls as $selectdburl){
+    //dpm($selectdburl->url);
+    $cnt++;
+    $dburls[$selectdburl->hash] = $selectdburl->url;
+    if ($recacher_max_urls != FALSE AND $cnt >= $recacher_max_urls) break; // Do not consider more than recacher_max_urls
+  }
+  //dpm($dburls);
+
+  // Only continue if there any URLs found.
+  if (empty($dburls)) return;
+
+  foreach ($dburls as $dburl) {
+    // Queue up the request.
+    // We are using BLOCKING requests so as not to strain the target website with parallel requests for uncached URLs.
+    // Accept-Encoding is crucial - this is how most browsers, but also GoogleBot, request content. If we leave it out, most browsers would still find the cache cold!
+    httprl_request($dburl, array('timeout' => 90, 'blocking' => true, 'headers'=>array('Accept-Encoding' => 'gzip')));
+  }
+  // Execute request.
+  $request = httprl_send_request();
+  //dpm($request);
+
+  $codes = array();
+  foreach ($request as $url => $probe) {
+    $codes[$url] = $probe->code;
+  }
+  //dpm($codes);
+
+  if (variable_get('recacher_watchdog') <> 'none'){
+    $someerror = FALSE;
+    // Report success and issue a warning for URLs that did not return code 200.
+    $messages = array();
+    foreach ($dburls as $dburl) {
+      if ($codes[$dburl] <> 200) {
+        $success = t('UNsuccessful');
+        $someerror = TRUE;
+      }
+      else {
+        $success = t('successful');
+      }
+      if ($codes[$dburl] == 200 AND variable_get('recacher_watchdog') == 'only unsuccessful') continue; // If not required, don't show successfully re-cached URLs.
+      $messages[] = '<li>' . $success . ' (' . $codes[$dburl] . '): ' . $dburl . '</li>';
+    }
+    //dpm($messages);
+    if (!empty($messages)){
+      $messages = '<ul>' . implode('', $messages) . '</ul>';
+      $boodschap = t('Attempted re-caching the following URLs:') . '</br>' . $messages;
+      if ($someerror === FALSE){
+        watchdog('Recacher', $boodschap, NULL, WATCHDOG_INFO);
+      }
+      else {
+        watchdog('Recacher', $boodschap, NULL, WATCHDOG_WARNING); // If there is at least one unsuccessful re-caching, elevate the watchdog reporting level.
+      }
+    }
+  }
+
+  // Delete all URLs we've attempted to re-cache from the db table.
+  $hashes = array_keys($dburls);
+  //dpm($hashes);
+  $query = db_delete('recacher')
+    ->condition('hash', $hashes, 'IN')
+    ->execute();
+
+}

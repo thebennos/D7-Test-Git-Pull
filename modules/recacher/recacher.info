@@ -1,0 +1,19 @@
+name = Recacher
+description = Tracks URLs expired by Cache Expiration and warms their cache.
+package = Performance and scalability
+core = 7.x
+
+dependencies[] = expire
+dependencies[] = httprl
+
+configure = admin/config/system/recacher
+
+; https://www.drupal.org/node/542202#files
+; files[] = recacher_settings.inc
+
+; Information added by Drupal.org packaging script on 2016-03-20
+version = "7.x-1.0"
+core = "7.x"
+project = "recacher"
+datestamp = "1458468243"
+
