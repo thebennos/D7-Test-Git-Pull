@@ -1,0 +1,13 @@
+<?php
+/**
+ * @file
+ * Installation Success Message.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function ajax_privatemsg_install() {
+  $t = get_t();
+  drupal_set_message(check_plain($t('ajax_privatemsg Module has been successfully installed')));
+}
